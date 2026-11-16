@@ -1,0 +1,25 @@
+# Dossiers regeneres par Unreal Engine
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Plugins du projet : on garde le code et le contenu, pas les fichiers generes
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Fichiers d'IDE (Visual Studio, Rider, VS Code)
+.vs/
+.idea/
+.vscode/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Fichiers systeme
+Thumbs.db
+Desktop.ini
+.DS_Store
