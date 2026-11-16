@@ -3,6 +3,16 @@
 	"EngineAssociation": "{2FDB53C3-4596-D852-FCC3-23BF1694605E}",
 	"Category": "",
 	"Description": "",
+	"Modules": [
+		{
+			"Name": "FootArcade",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine"
+			]
+		}
+	],
 	"Plugins": [
 		{
 			"Name": "ModelingToolsEditorMode",
