@@ -6,6 +6,7 @@
 #include "FootPowerTypes.generated.h"
 
 class UNiagaraSystem;
+class UMaterialInterface;
 
 /**
  * Famille de pouvoirs d'un personnage, identifiée par sa couleur.
@@ -24,13 +25,20 @@ struct FOOTARCADE_API FFootAuraSettings
 {
 	GENERATED_BODY()
 
-	/** Effet Niagara (en boucle) joué autour du personnage. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
-	TObjectPtr<UNiagaraSystem> Systeme = nullptr;
-
-	/** Couleur de la famille (HUD, indicateurs...). La couleur de l'effet lui-même vient du système choisi. */
+	/** Couleur de la famille : teinte l'aura de contour (paramètre "Couleur") et sert au HUD. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
 	FLinearColor Couleur = FLinearColor::White;
+
+	/**
+	 * Matériau d'aura de contour, appliqué en surimpression (overlay) sur tous les meshes visibles du personnage.
+	 * Paramètres attendus : "Couleur" (vecteur) et "Intensite" (scalaire 0-1, animé pour le fondu).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	TObjectPtr<UMaterialInterface> MateriauContour = nullptr;
+
+	/** Effet Niagara optionnel (en boucle) joué en plus du contour, par ex. des flammes aux pieds. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	TObjectPtr<UNiagaraSystem> Systeme = nullptr;
 
 	/** Position de l'aura par rapport au centre de la capsule (par défaut : aux pieds). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")

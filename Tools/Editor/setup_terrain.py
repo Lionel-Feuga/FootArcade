@@ -13,12 +13,37 @@ CONSTRUIRE_MAP = "--sans-map" not in sys.argv
 # Aura de chaque famille de pouvoirs : système Niagara du pack Vefects (la couleur vient de la LUT du matériau).
 AURAS = {
     "BLEU": {
-        # Variante "Radial" : anneau de flammes autour des pieds ; "Water" = LUT cyan/bleu.
-        "systeme": "/Game/Vefects/Stylized_Fire/VFX/Water/Particles/NS_Stylized_Fire_Radial_01_Water",
         "couleur": (0.10, 0.45, 1.0),
+        # Aura principale : contour lumineux qui épouse le corps (matériau en surimpression).
+        "contour": "/Game/FootArcade/VFX/M_AuraContour",
+        # Effet Niagara optionnel en plus (None = aucun). Ex. anneau de flammes bleues aux pieds :
+        # "/Game/Vefects/Stylized_Fire/VFX/Water/Particles/NS_Stylized_Fire_Radial_01_Water"
+        "systeme": None,
         "echelle": (1.4, 1.4, 1.8),
     },
 }
+
+VFX_DIR = "/Game/FootArcade/VFX"
+PERLIN = "/Game/Vefects/Stylized_Fire/VFX/Shared/Textures/T_VFX_Perlin_01"
+
+# Personnage CoreC masculin (pack CoreC) : corps invisible qui porte l'animation, pièces visibles en Leader Pose.
+COREC = "/Game/CoreC/"
+COREC_CORPS = COREC + "02BaseBody/SKM/SKM_CoreC_M_Base_Body_Combined"
+COREC_ANIM = COREC + "00EngineDefault/Characters/Mannequins/Animations/ABP_Manny"
+COREC_PIECES = [
+    # (nom du composant, mesh, tags)
+    ("Tenue_Haut", COREC + "03Outfit/000_TechwearRunnerCourier01/SKM/SKM_CoreC_M_Techwear01_Upper", []),
+    ("Tenue_Bas", COREC + "03Outfit/000_TechwearRunnerCourier01/SKM/SKM_CoreC_M_Techwear01_Lower", []),
+    ("Tenue_Chaussures", COREC + "03Outfit/000_TechwearRunnerCourier01/SKM/SKM_CoreC_M_Techwear01_Shoes", []),
+    ("Corps_Mains", COREC + "02BaseBody/SKM/SKM_CoreC_M_Base_Hands", []),
+    ("Corps_Tete", COREC + "02BaseBody/SKM/SKM_CoreC_M_Base_Face", []),
+    ("Corps_Yeux", COREC + "02BaseBody/SKM/SKM_CoreC_M_Base_Eyes", []),
+    ("Corps_Dents", COREC + "02BaseBody/SKM/SKM_CoreC_M_Base_Teeth", []),
+    ("Cheveux", COREC + "04Hairstyle/Male/SKM_CoreC_Male_HairA05", ["Socket:head"]),
+]
+# Transformation des cheveux relative au socket "head" (reprise du Blueprint CoreC d'origine).
+COREC_CHEVEUX_LOC = (-162.8, -0.7, 0.0)
+COREC_CHEVEUX_ROT = unreal.Rotator(0, -90, 0)  # Python : (roll, pitch, yaw)
 
 EAL = unreal.EditorAssetLibrary
 AT = unreal.AssetToolsHelpers.get_asset_tools()
@@ -175,22 +200,139 @@ def bp_ball():
     finish_bp(bp)
     state["BP_FootBall"] = bp
 
+# ------------------------------------------------------------------ Matériau d'aura de contour
+def material_contour():
+    MEL = unreal.MaterialEditingLibrary
+    mat = get_or_create("M_AuraContour", VFX_DIR, unreal.Material, unreal.MaterialFactoryNew())
+    # Repart d'un graphe vide (delete_all_material_expressions ne supprime pas tout).
+    for ex in list(MEL.get_material_expressions(mat)):
+        MEL.delete_material_expression(mat, ex)
+    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE)
+    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    mat.set_editor_property("used_with_skeletal_mesh", True)
+
+    def E(cls, x, y, **props):
+        e = MEL.create_material_expression(mat, cls, x, y)
+        for k, v in props.items():
+            e.set_editor_property(k, v)
+        return e
+    def param(name, val, x, y):
+        return E(unreal.MaterialExpressionScalarParameter, x, y, parameter_name=name, default_value=val)
+    def mul(a, b, x, y, ao="", bo=""):
+        m = E(unreal.MaterialExpressionMultiply, x, y)
+        MEL.connect_material_expressions(a, ao, m, "A")
+        MEL.connect_material_expressions(b, bo, m, "B")
+        return m
+    def const(v, x, y):
+        return E(unreal.MaterialExpressionConstant, x, y, r=v)
+
+    couleur = E(unreal.MaterialExpressionVectorParameter, -1400, -300, parameter_name="Couleur",
+                default_value=unreal.LinearColor(0.1, 0.45, 1.0, 1.0))
+    intensite = param("Intensite", 1.0, -1400, -150)
+    brillance = param("Brillance", 12.0, -1400, 0)
+    fexp = param("FresnelExposant", 4.0, -1400, 150)
+    epaisseur = param("Epaisseur", 2.0, -1400, 600)
+    tiling = param("Tiling", 3.0, -1400, 300)
+
+    # Contour : fresnel (fort sur les bords de la silhouette)
+    fres = E(unreal.MaterialExpressionFresnel, -1100, 150, base_reflect_fraction=0.0)
+    MEL.connect_material_expressions(fexp, "", fres, "ExponentIn")
+
+    # Flammes : deux bruits Perlin du pack qui défilent vers le haut à des vitesses différentes
+    tex = load(PERLIN)
+    tc = E(unreal.MaterialExpressionTextureCoordinate, -1400, 420)
+    uv1 = mul(tc, tiling, -1200, 400)
+    uv2 = mul(uv1, const(1.9, -1200, 520), -1050, 500)
+    pan1 = E(unreal.MaterialExpressionPanner, -950, 380, speed_x=0.05, speed_y=-0.45)
+    pan2 = E(unreal.MaterialExpressionPanner, -850, 520, speed_x=-0.07, speed_y=-0.8)
+    MEL.connect_material_expressions(uv1, "", pan1, "Coordinate")
+    MEL.connect_material_expressions(uv2, "", pan2, "Coordinate")
+    st = unreal.MaterialSamplerType.SAMPLERTYPE_COLOR if tex.get_editor_property("srgb") else unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR
+    t1 = E(unreal.MaterialExpressionTextureSample, -750, 380, texture=tex, sampler_type=st)
+    t2 = E(unreal.MaterialExpressionTextureSample, -650, 520, texture=tex, sampler_type=st)
+    MEL.connect_material_expressions(pan1, "", t1, "UVs")
+    MEL.connect_material_expressions(pan2, "", t2, "UVs")
+    bruit = mul(t1, t2, -450, 450, "R", "R")
+    bruit_fort = mul(bruit, const(3.0, -450, 560), -300, 450)
+    bruit_base = E(unreal.MaterialExpressionAdd, -150, 450)
+    MEL.connect_material_expressions(bruit_fort, "", bruit_base, "A")
+    MEL.connect_material_expressions(const(0.06, -300, 560), "", bruit_base, "B")
+
+    masque = mul(fres, bruit_base, 0, 250)
+    c1 = mul(couleur, brillance, -1100, -250)
+    c2 = mul(c1, intensite, -900, -200)
+    emissif = mul(c2, masque, 200, 0)
+    MEL.connect_material_property(emissif, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+
+    # Léger gonflement le long des normales pour que l'aura "enveloppe" le corps.
+    vn = E(unreal.MaterialExpressionVertexNormalWS, -1100, 650)
+    w1 = mul(vn, epaisseur, -900, 650)
+    w2 = mul(w1, intensite, -700, 650)
+    MEL.connect_material_property(w2, "", unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+
+    MEL.recompile_material(mat)
+    EAL.save_loaded_asset(mat)
+    state["M_AuraContour"] = mat
+
+def add_part(bp, parent_handle, name, mesh_path, tags):
+    """Ajoute (ou met à jour) un SkeletalMeshComponent enfant du Mesh dans le Blueprint."""
+    SDS = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+    SDL = unreal.SubobjectDataBlueprintFunctionLibrary
+    comp = None
+    for h in SDS.k2_gather_subobject_data_for_blueprint(bp):
+        o = SDL.get_object(SDL.get_data(h))
+        if o and (o.get_name().startswith(name + "_GEN_VARIABLE") or str(SDL.get_variable_name(SDL.get_data(h))) == name):
+            comp = o
+            break
+    if comp is None:
+        params = unreal.AddNewSubobjectParams(parent_handle=parent_handle, new_class=unreal.SkeletalMeshComponent, blueprint_context=bp)
+        h, fail = SDS.add_new_subobject(params)
+        if not fail.is_empty():
+            raise RuntimeError("ajout %s : %s" % (name, fail))
+        SDS.rename_subobject(h, unreal.Text(name))
+        comp = SDL.get_object(SDL.get_data(h))
+    comp.set_editor_property("skeletal_mesh_asset", load(mesh_path))
+    comp.set_editor_property("component_tags", tags)
+    comp.set_collision_profile_name("NoCollision")
+    return comp
+
 def bp_player():
     bp = make_bp("BP_FootPlayer", unreal.FootPlayer)
     finish_bp(bp)
-    mesh = cdo_of(bp).get_editor_property("mesh")
-    mesh.set_editor_property("skeletal_mesh_asset", load("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple"))
+    cdo = cdo_of(bp)
+
+    # Corps CoreC : porte l'animation, invisible (seules les pièces sont rendues).
+    mesh = cdo.get_editor_property("mesh")
+    mesh.set_editor_property("skeletal_mesh_asset", load(COREC_CORPS))
     mesh.set_editor_property("animation_mode", unreal.AnimationMode.ANIMATION_BLUEPRINT)
-    mesh.set_editor_property("anim_class", load("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed").generated_class())
+    mesh.set_editor_property("anim_class", load(COREC_ANIM).generated_class())
     mesh.set_editor_property("relative_location", unreal.Vector(0, 0, -96))
     mesh.set_editor_property("relative_rotation", unreal.Rotator(0, 0, -90))  # Python : (roll, pitch, yaw)
+    mesh.set_editor_property("visible", False)
+    mesh.set_editor_property("visibility_based_anim_tick_option", unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
+
+    SDS = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+    SDL = unreal.SubobjectDataBlueprintFunctionLibrary
+    mesh_handle = None
+    for h in SDS.k2_gather_subobject_data_for_blueprint(bp):
+        o = SDL.get_object(SDL.get_data(h))
+        if o and o.get_name() == "CharacterMesh0":
+            mesh_handle = h
+            break
+    if mesh_handle is None:
+        raise RuntimeError("composant Mesh introuvable dans BP_FootPlayer")
+    for name, path, tags in COREC_PIECES:
+        comp = add_part(bp, mesh_handle, name, path, tags)
+        if name == "Cheveux":
+            comp.set_editor_property("relative_location", unreal.Vector(*COREC_CHEVEUX_LOC))
+            comp.set_editor_property("relative_rotation", COREC_CHEVEUX_ROT)
 
     # Pouvoirs : personnage de la famille Bleu (capacités physiques) avec la super vitesse.
-    cdo = cdo_of(bp)
     auras = {}
     for fam, cfg in AURAS.items():
         s = unreal.FootAuraSettings()
-        s.set_editor_property("systeme", load(cfg["systeme"]))
+        s.set_editor_property("systeme", load(cfg["systeme"]) if cfg.get("systeme") else None)
+        s.set_editor_property("materiau_contour", load(cfg["contour"]) if cfg.get("contour") else None)
         s.set_editor_property("couleur", unreal.LinearColor(*cfg["couleur"], 1.0))
         s.set_editor_property("echelle", unreal.Vector(*cfg.get("echelle", (1.0, 1.0, 1.0))))
         auras[getattr(unreal.FootPowerFamily, fam)] = s
@@ -326,7 +468,7 @@ def level():
     if not les.save_current_level():
         raise RuntimeError("sauvegarde de la map échouée")
 
-etapes = [phys_material, input_actions, input_context, bp_ball, bp_player, bp_controller, bp_gamemode]
+etapes = [phys_material, input_actions, input_context, material_contour, bp_ball, bp_player, bp_controller, bp_gamemode]
 if CONSTRUIRE_MAP:
     etapes.append(level)
 for fn in etapes:

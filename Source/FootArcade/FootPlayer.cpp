@@ -14,6 +14,8 @@
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "TimerManager.h"
+#include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 AFootPlayer::AFootPlayer()
 {
@@ -67,6 +69,83 @@ AFootPlayer::AFootPlayer()
 	Aura->SetupAttachment(RootComponent);
 	Aura->SetAutoActivate(false);
 	Aura->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void AFootPlayer::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	SetupModularMeshes();
+}
+
+void AFootPlayer::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	// Aussi dans l'éditeur, pour que l'aperçu du Blueprint soit correctement posé.
+	SetupModularMeshes();
+}
+
+void AFootPlayer::SetupModularMeshes()
+{
+	USkeletalMeshComponent* Leader = GetMesh();
+	const USkeletalMesh* LeaderMesh = Leader ? Leader->GetSkeletalMeshAsset() : nullptr;
+	if (!LeaderMesh)
+	{
+		return;
+	}
+
+	TArray<USkeletalMeshComponent*> Parts;
+	GetComponents<USkeletalMeshComponent>(Parts);
+	for (USkeletalMeshComponent* Part : Parts)
+	{
+		const USkeletalMesh* PartMesh = Part ? Part->GetSkeletalMeshAsset() : nullptr;
+		if (Part == Leader || !PartMesh)
+		{
+			continue;
+		}
+		if (PartMesh->GetSkeleton() == LeaderMesh->GetSkeleton())
+		{
+			Part->SetLeaderPoseComponent(Leader);
+			continue;
+		}
+
+		// Pièce à squelette propre (ex. cheveux) : tag "Socket:<nom>" = attachée à ce socket du Mesh principal,
+		// en gardant sa transformation relative.
+		for (const FName& Tag : Part->ComponentTags)
+		{
+			FString SocketName;
+			if (Tag.ToString().Split(TEXT("Socket:"), nullptr, &SocketName) && !SocketName.IsEmpty())
+			{
+				if (Part->GetAttachParent() != Leader || Part->GetAttachSocketName() != FName(*SocketName))
+				{
+					Part->AttachToComponent(Leader, FAttachmentTransformRules::KeepRelativeTransform, FName(*SocketName));
+				}
+				break;
+			}
+		}
+	}
+}
+
+void AFootPlayer::GetVisibleBodyMeshes(TArray<USkeletalMeshComponent*>& OutMeshes) const
+{
+	TArray<USkeletalMeshComponent*> Parts;
+	GetComponents<USkeletalMeshComponent>(Parts);
+	for (USkeletalMeshComponent* Part : Parts)
+	{
+		if (Part && Part->GetSkeletalMeshAsset() && Part->IsVisible() && !Part->bHiddenInGame)
+		{
+			OutMeshes.Add(Part);
+		}
+	}
+}
+
+void AFootPlayer::ApplyContourOverlay(UMaterialInterface* Overlay)
+{
+	TArray<USkeletalMeshComponent*> Parts;
+	GetVisibleBodyMeshes(Parts);
+	for (USkeletalMeshComponent* Part : Parts)
+	{
+		Part->SetOverlayMaterial(Overlay);
+	}
 }
 
 void AFootPlayer::BeginPlay()
@@ -190,6 +269,17 @@ void AFootPlayer::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// Fondu de l'aura de contour.
+	if (ContourMID && ContourIntensite != ContourCible)
+	{
+		ContourIntensite = FMath::FInterpConstantTo(ContourIntensite, ContourCible, DeltaSeconds, 1.f / DureeFonduContour);
+		ContourMID->SetScalarParameterValue(TEXT("Intensite"), ContourIntensite);
+		if (ContourIntensite <= 0.f)
+		{
+			ApplyContourOverlay(nullptr);
+		}
+	}
+
 #if ENABLE_DRAW_DEBUG
 	if (bAfficherVisee && bChargingKick && IsLocallyControlled())
 	{
@@ -224,7 +314,27 @@ FLinearColor AFootPlayer::GetCouleurFamille() const
 void AFootPlayer::ActivateAura()
 {
 	const FFootAuraSettings* Settings = FindAuraSettings();
-	if (!Aura || !Settings || !Settings->Systeme)
+	if (!Settings)
+	{
+		return;
+	}
+
+	// Aura de contour : surimpression sur tout le corps, teintée à la couleur de la famille.
+	if (Settings->MateriauContour)
+	{
+		if (!ContourMID || ContourMID->Parent != Settings->MateriauContour)
+		{
+			ContourMID = UMaterialInstanceDynamic::Create(Settings->MateriauContour, this);
+			ContourIntensite = 0.f;
+		}
+		ContourMID->SetVectorParameterValue(TEXT("Couleur"), Settings->Couleur);
+		ContourMID->SetScalarParameterValue(TEXT("Intensite"), ContourIntensite);
+		ContourCible = 1.f;
+		ApplyContourOverlay(ContourMID);
+	}
+
+	// Effet Niagara optionnel.
+	if (!Aura || !Settings->Systeme)
 	{
 		return;
 	}
@@ -249,7 +359,10 @@ void AFootPlayer::ActivateAura()
 
 void AFootPlayer::StopAura()
 {
-	if (!Aura)
+	// Le contour s'efface dans Tick, puis la surimpression est retirée.
+	ContourCible = 0.f;
+
+	if (!Aura || !Aura->GetAsset())
 	{
 		return;
 	}

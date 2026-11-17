@@ -12,6 +12,8 @@ class UCameraComponent;
 class USphereComponent;
 class UNiagaraComponent;
 class UFootPowerComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 /**
  * Personnage joueur : caméra à la 3e personne sur spring arm, zone de frappe devant les pieds,
@@ -96,8 +98,22 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void PostInitializeComponents() override;
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	const FFootAuraSettings* FindAuraSettings() const;
+
+	/**
+	 * Personnage modulaire (CoreC) : toutes les pièces (tenue, tête, mains...) qui partagent le squelette
+	 * du Mesh principal suivent sa pose (Leader Pose). Les pièces à squelette différent (cheveux) restent attachées par socket.
+	 */
+	void SetupModularMeshes();
+
+	/** Pièces visibles du personnage, sur lesquelles on applique l'aura de contour. */
+	void GetVisibleBodyMeshes(TArray<USkeletalMeshComponent*>& OutMeshes) const;
+
+	/** Applique (ou retire si null) le matériau d'aura en surimpression sur toutes les pièces visibles. */
+	void ApplyContourOverlay(UMaterialInterface* Overlay);
 
 	/** Bras de caméra derrière le joueur. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Foot|Camera")
@@ -159,6 +175,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Pouvoir")
 	TMap<EFootPowerFamily, FFootAuraSettings> AurasParFamille;
 
+	/** Durée d'apparition / disparition de l'aura de contour, en secondes. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Pouvoir", meta = (ClampMin = "0.01"))
+	float DureeFonduContour = 0.25f;
+
 	/** Durée du fondu de l'aura à la fin d'un pouvoir avant extinction complète, en secondes. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Pouvoir", meta = (ClampMin = "0.0"))
 	float DureeFonduAura = 0.4f;
@@ -171,4 +191,11 @@ private:
 	bool bChargingKick = false;
 	float ChargeStartTime = 0.f;
 	FTimerHandle TimerExtinctionAura;
+
+	/** Instance dynamique du matériau de contour (couleur + intensité animée). */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ContourMID;
+
+	float ContourIntensite = 0.f;
+	float ContourCible = 0.f;
 };
