@@ -333,15 +333,18 @@ void AFootPlayer::ActivateAura()
 		ApplyContourOverlay(ContourMID);
 	}
 
-	// Effet Niagara optionnel.
-	if (!Aura || !Settings->Systeme)
-	{
-		return;
-	}
-
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TimerExtinctionAura);
+	}
+
+	// Flammes qui montent du corps.
+	ActivateFlammes(*Settings);
+
+	// Effet Niagara optionnel centré sur le personnage.
+	if (!Aura || !Settings->Systeme)
+	{
+		return;
 	}
 
 	if (Aura->GetAsset() != Settings->Systeme)
@@ -357,30 +360,104 @@ void AFootPlayer::ActivateAura()
 	Aura->Activate(true);
 }
 
+void AFootPlayer::ActivateFlammes(const FFootAuraSettings& Settings)
+{
+	USkeletalMeshComponent* Corps = GetMesh();
+	if (!Settings.SystemeFlammes || !Corps)
+	{
+		return;
+	}
+
+	// Les foyers sont créés une seule fois, puis simplement réactivés.
+	if (FoyersFlammes.Num() != Settings.Flammes.Num())
+	{
+		for (UNiagaraComponent* Foyer : FoyersFlammes)
+		{
+			if (Foyer)
+			{
+				Foyer->DestroyComponent();
+			}
+		}
+		FoyersFlammes.Reset();
+
+		for (const FFootAuraFlamme& Flamme : Settings.Flammes)
+		{
+			UNiagaraComponent* Foyer = NewObject<UNiagaraComponent>(this);
+			Foyer->SetAutoActivate(false);
+			Foyer->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Foyer->SetupAttachment(Corps, Flamme.Os);
+			// Rotation absolue : les flammes montent toujours vers le ciel, quelle que soit la pose de l'os.
+			Foyer->SetUsingAbsoluteRotation(true);
+			Foyer->RegisterComponent();
+			Foyer->SetRelativeLocation(Flamme.Decalage);
+			Foyer->SetWorldRotation(FRotator::ZeroRotator);
+			Foyer->SetRelativeScale3D(FVector(Flamme.Echelle));
+			FoyersFlammes.Add(Foyer);
+		}
+	}
+
+	for (int32 Index = 0; Index < FoyersFlammes.Num(); ++Index)
+	{
+		UNiagaraComponent* Foyer = FoyersFlammes[Index];
+		if (!Foyer)
+		{
+			continue;
+		}
+		if (Foyer->GetAsset() != Settings.SystemeFlammes)
+		{
+			Foyer->SetAsset(Settings.SystemeFlammes);
+		}
+		for (const TPair<FName, float>& Param : Settings.ParametresFloat)
+		{
+			Foyer->SetVariableFloat(Param.Key, Param.Value);
+		}
+		if (!Settings.ParametreTailleFlammes.IsNone() && Settings.Flammes.IsValidIndex(Index))
+		{
+			Foyer->SetRelativeScale3D(FVector::OneVector);
+			Foyer->SetVariableFloat(Settings.ParametreTailleFlammes, Settings.Flammes[Index].Echelle);
+		}
+		Foyer->Activate(true);
+	}
+}
+
 void AFootPlayer::StopAura()
 {
 	// Le contour s'efface dans Tick, puis la surimpression est retirée.
 	ContourCible = 0.f;
 
-	if (!Aura || !Aura->GetAsset())
+	// Extinction douce : on arrête l'émission des flammes et de l'effet optionnel...
+	TArray<TWeakObjectPtr<UNiagaraComponent>> AEteindre;
+	for (UNiagaraComponent* Foyer : FoyersFlammes)
 	{
-		return;
+		if (Foyer)
+		{
+			Foyer->Deactivate();
+			AEteindre.Add(Foyer);
+		}
 	}
-
-	// Extinction douce : on arrête l'émission...
-	Aura->Deactivate();
+	if (Aura && Aura->GetAsset())
+	{
+		Aura->Deactivate();
+		AEteindre.Add(Aura);
+	}
 
 	// ...puis on coupe net après un court fondu, car certains effets du pack continuent d'émettre après Deactivate.
 	if (UWorld* World = GetWorld())
 	{
-		TWeakObjectPtr<UNiagaraComponent> WeakAura = Aura;
 		TWeakObjectPtr<AFootPlayer> WeakThis = this;
-		World->GetTimerManager().SetTimer(TimerExtinctionAura, FTimerDelegate::CreateLambda([WeakAura, WeakThis]()
+		World->GetTimerManager().SetTimer(TimerExtinctionAura, FTimerDelegate::CreateLambda([AEteindre, WeakThis]()
 		{
 			const bool bPouvoirActif = WeakThis.IsValid() && WeakThis->Pouvoir && WeakThis->Pouvoir->IsPowerActive();
-			if (WeakAura.IsValid() && !bPouvoirActif)
+			if (bPouvoirActif)
 			{
-				WeakAura->DeactivateImmediate();
+				return;
+			}
+			for (const TWeakObjectPtr<UNiagaraComponent>& Comp : AEteindre)
+			{
+				if (Comp.IsValid())
+				{
+					Comp->DeactivateImmediate();
+				}
 			}
 		}), DureeFonduAura, false);
 	}

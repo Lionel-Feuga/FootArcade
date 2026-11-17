@@ -196,6 +196,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ContourMID;
 
+	/** Foyers de flammes créés à la première activation de l'aura (un par entrée de Flammes). */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> FoyersFlammes;
+
+	void ActivateFlammes(const FFootAuraSettings& Settings);
+
 	float ContourIntensite = 0.f;
 	float ContourCible = 0.f;
 };

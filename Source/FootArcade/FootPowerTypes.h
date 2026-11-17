@@ -19,6 +19,25 @@ enum class EFootPowerFamily : uint8
 	Bleu   UMETA(DisplayName = "Bleu - Capacités physiques"),
 };
 
+/** Un foyer de flammes de l'aura, attaché à un os du squelette. */
+USTRUCT(BlueprintType)
+struct FOOTARCADE_API FFootAuraFlamme
+{
+	GENERATED_BODY()
+
+	/** Os (ou socket) du squelette auquel les flammes sont attachées (ex. "clavicle_l", "spine_05"). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	FName Os;
+
+	/** Décalage par rapport à l'os. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	FVector Decalage = FVector::ZeroVector;
+
+	/** Taille des flammes de ce foyer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	float Echelle = 0.5f;
+};
+
 /** Réglages de l'aura affichée pendant qu'un pouvoir est actif. */
 USTRUCT(BlueprintType)
 struct FOOTARCADE_API FFootAuraSettings
@@ -36,7 +55,22 @@ struct FOOTARCADE_API FFootAuraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
 	TObjectPtr<UMaterialInterface> MateriauContour = nullptr;
 
-	/** Effet Niagara optionnel (en boucle) joué en plus du contour, par ex. des flammes aux pieds. */
+	/** Effet Niagara (en boucle) des flammes qui montent du corps, joué sur chaque foyer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	TObjectPtr<UNiagaraSystem> SystemeFlammes = nullptr;
+
+	/** Foyers de flammes répartis sur le corps (épaules, bras, dos...). Toujours orientés vers le haut. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	TArray<FFootAuraFlamme> Flammes;
+
+	/**
+	 * Paramètre utilisateur float de l'effet qui règle la taille des flammes (les effets Vefects ignorent l'échelle
+	 * du composant). Chaque foyer y écrit son Echelle. Vide = on utilise l'échelle du composant.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
+	FName ParametreTailleFlammes = TEXT("ScaleOverall");
+
+	/** Effet Niagara optionnel (en boucle) joué en plus, centré sur le personnage (ex. anneau aux pieds). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aura")
 	TObjectPtr<UNiagaraSystem> Systeme = nullptr;
 

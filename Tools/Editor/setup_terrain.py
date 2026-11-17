@@ -16,6 +16,20 @@ AURAS = {
         "couleur": (0.10, 0.45, 1.0),
         # Aura principale : contour lumineux qui épouse le corps (matériau en surimpression).
         "contour": "/Game/FootArcade/VFX/M_AuraContour",
+        # Flammes qui montent du corps : effet du pack (variante Water = bleu), un foyer par os.
+        # Désactivé : les effets Vefects sont des feux de camp autonomes (grosses gerbes) et forment un bloc qui masque
+        # le joueur. Remettre le chemin pour réessayer, ou pointer vers un système d'aura dédié (NS_Aura...).
+        "flammes_systeme": None,  # "/Game/Vefects/Stylized_Fire/VFX/Water/Particles/NS_Stylized_Fire_01_Water"
+        "flammes": [
+            # (os, taille des flammes = paramètre ScaleOverall de l'effet) : surtout dos, épaules, bras.
+            ("spine_05", 0.45), ("spine_02", 0.35),
+            ("clavicle_l", 0.35), ("clavicle_r", 0.35),
+            ("upperarm_l", 0.3), ("upperarm_r", 0.3),
+            ("lowerarm_l", 0.22), ("lowerarm_r", 0.22),
+            ("head", 0.25),
+        ],
+        # Paramètres utilisateur de l'effet : pas de décalage vers la caméra (sinon les flammes masquent le joueur).
+        "parametres": {"CameraOffset": 0.0, "ScaleSizeVertical": 1.6, "ScaleSizeHorizontal": 0.8},
         # Effet Niagara optionnel en plus (None = aucun). Ex. anneau de flammes bleues aux pieds :
         # "/Game/Vefects/Stylized_Fire/VFX/Water/Particles/NS_Stylized_Fire_Radial_01_Water"
         "systeme": None,
@@ -333,6 +347,15 @@ def bp_player():
         s = unreal.FootAuraSettings()
         s.set_editor_property("systeme", load(cfg["systeme"]) if cfg.get("systeme") else None)
         s.set_editor_property("materiau_contour", load(cfg["contour"]) if cfg.get("contour") else None)
+        s.set_editor_property("systeme_flammes", load(cfg["flammes_systeme"]) if cfg.get("flammes_systeme") else None)
+        foyers = []
+        for os_name, ech in cfg.get("flammes", []):
+            f = unreal.FootAuraFlamme()
+            f.set_editor_property("os", os_name)
+            f.set_editor_property("echelle", ech)
+            foyers.append(f)
+        s.set_editor_property("flammes", foyers)
+        s.set_editor_property("parametres_float", {unreal.Name(k): v for k, v in cfg.get("parametres", {}).items()})
         s.set_editor_property("couleur", unreal.LinearColor(*cfg["couleur"], 1.0))
         s.set_editor_property("echelle", unreal.Vector(*cfg.get("echelle", (1.0, 1.0, 1.0))))
         auras[getattr(unreal.FootPowerFamily, fam)] = s
