@@ -22,7 +22,7 @@ public:
 
 	/**
 	 * Frappe le ballon.
-	 * @param Direction  Direction du tir (normalisée en interne).
+	 * @param Direction  Direction du tir, hauteur comprise (normalisée en interne).
 	 * @param Power      Multiplicateur de puissance (1 = frappe normale).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Foot|Ballon")
@@ -56,8 +56,4 @@ protected:
 	/** Vitesse donnée au ballon par une frappe de puissance 1, en cm/s. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Ballon|Tir", meta = (ClampMin = "0.0"))
 	float KickForce = 2200.f;
-
-	/** Petite composante verticale ajoutée à chaque tir pour décoller le ballon du sol. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Ballon|Tir", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float KickLift = 0.15f;
 };

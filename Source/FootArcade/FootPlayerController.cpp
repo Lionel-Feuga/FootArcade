@@ -45,7 +45,13 @@ void AFootPlayerController::SetupInputComponent()
 	}
 	if (KickAction)
 	{
-		EIC->BindAction(KickAction, ETriggerEvent::Started, this, &AFootPlayerController::OnKick);
+		EIC->BindAction(KickAction, ETriggerEvent::Started, this, &AFootPlayerController::OnKickPressed);
+		EIC->BindAction(KickAction, ETriggerEvent::Completed, this, &AFootPlayerController::OnKickReleased);
+		EIC->BindAction(KickAction, ETriggerEvent::Canceled, this, &AFootPlayerController::OnKickReleased);
+	}
+	if (PowerAction)
+	{
+		EIC->BindAction(PowerAction, ETriggerEvent::Started, this, &AFootPlayerController::OnPower);
 	}
 }
 
@@ -65,10 +71,26 @@ void AFootPlayerController::OnLook(const FInputActionValue& Value)
 	}
 }
 
-void AFootPlayerController::OnKick(const FInputActionValue& Value)
+void AFootPlayerController::OnKickPressed(const FInputActionValue& Value)
 {
 	if (AFootPlayer* FootPawn = GetPawn<AFootPlayer>())
 	{
-		FootPawn->TryKick();
+		FootPawn->StartKickCharge();
+	}
+}
+
+void AFootPlayerController::OnKickReleased(const FInputActionValue& Value)
+{
+	if (AFootPlayer* FootPawn = GetPawn<AFootPlayer>())
+	{
+		FootPawn->ReleaseKick();
+	}
+}
+
+void AFootPlayerController::OnPower(const FInputActionValue& Value)
+{
+	if (AFootPlayer* FootPawn = GetPawn<AFootPlayer>())
+	{
+		FootPawn->UsePower();
 	}
 }

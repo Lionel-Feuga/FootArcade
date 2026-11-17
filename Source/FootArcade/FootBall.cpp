@@ -62,14 +62,12 @@ void AFootBall::Kick(FVector Direction, float Power)
 		return;
 	}
 
-	FVector ShotDir = Direction.GetSafeNormal();
+	// La direction est utilisée telle quelle : c'est le tireur qui décide de la hauteur.
+	const FVector ShotDir = Direction.GetSafeNormal();
 	if (ShotDir.IsNearlyZero())
 	{
 		return;
 	}
-
-	// Ajoute un peu de hauteur puis renormalise.
-	ShotDir = (ShotDir + FVector::UpVector * KickLift).GetSafeNormal();
 
 	// On repart d'une vitesse nulle pour une frappe nette et prévisible (style arcade).
 	BallMesh->SetPhysicsLinearVelocity(FVector::ZeroVector);

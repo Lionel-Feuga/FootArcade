@@ -1,12 +1,24 @@
 # Script éditeur (Python) : crée le contenu minimal branché sur les classes C++ FootArcade.
-#   - Input : IA_Tir, IMC_Foot
+#   - Input : IA_Tir, IA_Pouvoir, IMC_Foot
 #   - Physique : PM_Ballon
-#   - Blueprints : BP_FootBall, BP_FootPlayer, BP_FootPlayerController, BP_FootGameMode
+#   - Blueprints : BP_FootBall, BP_FootPlayer (famille, pouvoir, aura), BP_FootPlayerController, BP_FootGameMode
 #   - Map : L_Terrain (terrain arcade 40 x 25 m, murs, deux buts, ballon, PlayerStart)
-# Idempotent pour les assets ; la map est recréée de zéro à chaque lancement.
+# Idempotent pour les assets ; la map est recréée de zéro à chaque lancement, sauf avec l'option --sans-map.
 # Lancement (éditeur fermé) :
-#   UnrealEditor-Cmd.exe FootArcade.uproject -run=pythonscript -script=Tools/Editor/setup_terrain.py -unattended -NullRHI
-import unreal, traceback
+#   UnrealEditor-Cmd.exe FootArcade.uproject -run=pythonscript -script="Tools/Editor/setup_terrain.py --sans-map" -unattended -NullRHI
+import sys, unreal, traceback
+
+CONSTRUIRE_MAP = "--sans-map" not in sys.argv
+
+# Aura de chaque famille de pouvoirs : système Niagara du pack Vefects (la couleur vient de la LUT du matériau).
+AURAS = {
+    "BLEU": {
+        # Variante "Radial" : anneau de flammes autour des pieds ; "Water" = LUT cyan/bleu.
+        "systeme": "/Game/Vefects/Stylized_Fire/VFX/Water/Particles/NS_Stylized_Fire_Radial_01_Water",
+        "couleur": (0.10, 0.45, 1.0),
+        "echelle": (1.4, 1.4, 1.8),
+    },
+}
 
 EAL = unreal.EditorAssetLibrary
 AT = unreal.AssetToolsHelpers.get_asset_tools()
@@ -75,6 +87,10 @@ def input_actions():
     ia.set_editor_property("value_type", unreal.InputActionValueType.BOOLEAN)
     EAL.save_loaded_asset(ia)
     state["IA_Tir"] = ia
+    ip = get_or_create("IA_Pouvoir", INPUT_DIR, unreal.InputAction, unreal.InputAction_Factory())
+    ip.set_editor_property("value_type", unreal.InputActionValueType.BOOLEAN)
+    EAL.save_loaded_asset(ip)
+    state["IA_Pouvoir"] = ip
     state["IA_Move"] = load("/Game/Input/Actions/IA_Move")
     state["IA_Look"] = load("/Game/Input/Actions/IA_Look")
 
@@ -116,6 +132,10 @@ def input_context():
         mapping(imc, tir, "LeftMouseButton", []),
         mapping(imc, tir, "SpaceBar", []),
         mapping(imc, tir, "Gamepad_FaceButton_Right", []),
+        # Pouvoir : Maj gauche, clic droit, gâchette haute droite (RB / R1)
+        mapping(imc, state["IA_Pouvoir"], "LeftShift", []),
+        mapping(imc, state["IA_Pouvoir"], "RightMouseButton", []),
+        mapping(imc, state["IA_Pouvoir"], "Gamepad_RightShoulder", []),
     ]
     dkm = imc.get_editor_property("default_key_mappings")
     dkm.set_editor_property("mappings", maps)
@@ -164,6 +184,19 @@ def bp_player():
     mesh.set_editor_property("anim_class", load("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed").generated_class())
     mesh.set_editor_property("relative_location", unreal.Vector(0, 0, -96))
     mesh.set_editor_property("relative_rotation", unreal.Rotator(0, 0, -90))  # Python : (roll, pitch, yaw)
+
+    # Pouvoirs : personnage de la famille Bleu (capacités physiques) avec la super vitesse.
+    cdo = cdo_of(bp)
+    auras = {}
+    for fam, cfg in AURAS.items():
+        s = unreal.FootAuraSettings()
+        s.set_editor_property("systeme", load(cfg["systeme"]))
+        s.set_editor_property("couleur", unreal.LinearColor(*cfg["couleur"], 1.0))
+        s.set_editor_property("echelle", unreal.Vector(*cfg.get("echelle", (1.0, 1.0, 1.0))))
+        auras[getattr(unreal.FootPowerFamily, fam)] = s
+    cdo.set_editor_property("auras_par_famille", auras)
+    cdo.set_editor_property("famille", unreal.FootPowerFamily.BLEU)
+    cdo.set_editor_property("classe_pouvoir", unreal.FootPower_SuperVitesse.static_class())
     finish_bp(bp)
     state["BP_FootPlayer"] = bp
 
@@ -175,6 +208,7 @@ def bp_controller():
     cdo.set_editor_property("move_action", state["IA_Move"])
     cdo.set_editor_property("look_action", state["IA_Look"])
     cdo.set_editor_property("kick_action", state["IA_Tir"])
+    cdo.set_editor_property("power_action", state["IA_Pouvoir"])
     finish_bp(bp)
     state["BP_FootPlayerController"] = bp
 
@@ -292,7 +326,10 @@ def level():
     if not les.save_current_level():
         raise RuntimeError("sauvegarde de la map échouée")
 
-for fn in (phys_material, input_actions, input_context, bp_ball, bp_player, bp_controller, bp_gamemode, level):
+etapes = [phys_material, input_actions, input_context, bp_ball, bp_player, bp_controller, bp_gamemode]
+if CONSTRUIRE_MAP:
+    etapes.append(level)
+for fn in etapes:
     step(fn)
 
 if errors:

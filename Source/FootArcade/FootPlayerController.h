@@ -39,12 +39,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Input")
 	TObjectPtr<UInputAction> LookAction;
 
-	/** Action de frappe (Bool). */
+	/** Action de frappe (Bool) : appui = charge, relâchement = tir. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Input")
 	TObjectPtr<UInputAction> KickAction;
+
+	/** Action du pouvoir spécial (Bool). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Foot|Input")
+	TObjectPtr<UInputAction> PowerAction;
 
 private:
 	void OnMove(const FInputActionValue& Value);
 	void OnLook(const FInputActionValue& Value);
-	void OnKick(const FInputActionValue& Value);
+	void OnKickPressed(const FInputActionValue& Value);
+	void OnKickReleased(const FInputActionValue& Value);
+	void OnPower(const FInputActionValue& Value);
 };
